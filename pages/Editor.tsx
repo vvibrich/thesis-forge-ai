@@ -49,6 +49,7 @@ const Editor: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showEmptyState, setShowEmptyState] = useState(true);
+  const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
 
   // Plagiarism State
   const [isCheckingPlagiarism, setIsCheckingPlagiarism] = useState(false);
@@ -206,7 +207,12 @@ const Editor: React.FC = () => {
     }
   };
 
-  const handleGenerateChapter = async () => {
+  const handleRequestGeneration = () => {
+    setShowDisclaimerModal(true);
+  };
+
+  const executeGeneration = async () => {
+    setShowDisclaimerModal(false);
     if (!project || !activeChapter) return;
 
     setIsGenerating(true);
@@ -589,7 +595,7 @@ const Editor: React.FC = () => {
             </div>
 
             <button
-              onClick={handleGenerateChapter}
+              onClick={handleRequestGeneration}
               disabled={isGenerating}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-bold shadow-[0_0_15px_rgba(79,70,229,0.3)] disabled:opacity-50 disabled:shadow-none ml-2"
             >
@@ -834,6 +840,41 @@ const Editor: React.FC = () => {
                     className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
                   >
                     Confirmar Importação
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI Disclaimer Modal */}
+          {showDisclaimerModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+              <div className="bg-[#131926] rounded-xl border border-yellow-500/30 w-full max-w-md shadow-2xl flex flex-col overflow-hidden scale-100 animate-in zoom-in-95 duration-200">
+                <div className="p-6 text-center">
+                  <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-yellow-500/20">
+                    <AlertTriangle className="w-8 h-8 text-yellow-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white mb-2">Aviso Importante sobre IA</h3>
+                  <p className="text-slate-300 text-sm leading-relaxed">
+                    A Inteligência Artificial pode gerar informações incorretas ou desatualizadas.
+                    <br /><br />
+                    <strong className="text-white">É sua responsabilidade revisar, verificar fatos e adaptar o conteúdo.</strong>
+                    <br /><br />
+                    Esta ferramenta serve como auxílio e não substitui o trabalho acadêmico e intelectual do aluno.
+                  </p>
+                </div>
+                <div className="p-4 bg-[#0B0F19] border-t border-white/10 flex gap-3">
+                  <button
+                    onClick={() => setShowDisclaimerModal(false)}
+                    className="flex-1 px-4 py-2.5 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors font-medium"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={executeGeneration}
+                    className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold transition-colors shadow-lg shadow-indigo-500/20"
+                  >
+                    Estou ciente
                   </button>
                 </div>
               </div>
