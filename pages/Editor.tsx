@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Loader2, Save, Wand2, Download, FileText, ChevronLeft, X, ShieldCheck, AlertTriangle, CheckCircle, ExternalLink,
   Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  List, ListOrdered, Undo, Redo, Heading1, Heading2, Heading3, Quote, Type, Upload, PlusCircle
+  List, ListOrdered, Undo, Redo, Heading1, Heading2, Heading3, Quote, Type, Upload, PlusCircle, Sparkles
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
@@ -13,7 +13,7 @@ import { Editor as WysiwygEditor, EditorProvider } from 'react-simple-wysiwyg';
 import Sidebar from '../components/Sidebar';
 import { TCCProject, Chapter, PlagiarismResult } from '../types';
 import { projectsService } from '../services/projects';
-import { generateChapterContent } from '../services/geminiService';
+import { generateChapterContent, refineSelectedText } from '../services/geminiService';
 import { checkPlagiarism } from '../services/plagiarismService';
 
 // --- Local Toolbar Components ---
@@ -62,6 +62,11 @@ const Editor: React.FC = () => {
   const [newChapterTitle, setNewChapterTitle] = useState('');
   const importInputRef = useRef<HTMLDivElement>(null);
 
+  // Selection State
+  const [selectedText, setSelectedText] = useState('');
+  const [selectionRange, setSelectionRange] = useState<Range | null>(null);
+  const [isRefining, setIsRefining] = useState(false);
+
   useEffect(() => {
     if (id) {
       loadProject(id);
@@ -96,6 +101,80 @@ const Editor: React.FC = () => {
       setShowEmptyState(true);
     }
   }, [activeChapterId]);
+
+  // Handle Selection Changes
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) {
+        const text = selection.toString().trim();
+        if (text.length > 0) {
+          setSelectedText(text);
+          setSelectionRange(selection.getRangeAt(0).cloneRange());
+          return;
+        }
+      }
+      // Only clear if we really lost selection in the editor area
+      // But for simplicity in this MVP, we might clear it if user clicks away.
+      // A better approach is to check if the selection is inside the editor container.
+      // For now, we'll keep it simple: if selection is empty, clear state.
+      if (selection && selection.isCollapsed) {
+        setSelectedText('');
+        setSelectionRange(null);
+      }
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, []);
+
+  const handleRefineSelection = async () => {
+    if (!project || !selectedText || !selectionRange) return;
+
+    setIsRefining(true);
+    try {
+      const refinedText = await refineSelectedText(selectedText, project);
+
+      // Replace content in the range
+      selectionRange.deleteContents();
+      const div = document.createElement('div');
+      div.innerHTML = refinedText;
+
+      // Insert new nodes
+      const fragment = document.createDocumentFragment();
+      let lastNode: Node | null = null;
+      while (div.firstChild) {
+        lastNode = div.firstChild;
+        fragment.appendChild(lastNode);
+      }
+      selectionRange.insertNode(fragment);
+
+      // Update the editor content state by reading the container's HTML
+      // This is a bit tricky with react-simple-wysiwyg as it doesn't expose the ref easily.
+      // So we force an update by triggering a change event or manually updating state if we could access the ref.
+      // Since we modified the DOM directly, we need to sync the state.
+      // We'll try to find the editor container and get its innerHTML.
+      const editorContainer = document.querySelector('.rsw-ce');
+      if (editorContainer && activeChapterId) {
+        const newContent = editorContainer.innerHTML;
+        const updatedChapters = project.chapters.map(ch =>
+          ch.id === activeChapterId ? { ...ch, content: newContent } : ch
+        );
+        setProject({ ...project, chapters: updatedChapters });
+      }
+
+      // Clear selection
+      window.getSelection()?.removeAllRanges();
+      setSelectedText('');
+      setSelectionRange(null);
+
+    } catch (error) {
+      alert("Erro ao refinar texto selecionado.");
+      console.error(error);
+    } finally {
+      setIsRefining(false);
+    }
+  };
 
   const handleUpdateContent = (e: any) => {
     const newContent = e.target.value;
@@ -605,6 +684,24 @@ const Editor: React.FC = () => {
                     <Btn command="formatBlock" arg="blockquote" title="Citação">
                       <Quote size={16} />
                     </Btn>
+
+                    {selectedText && (
+                      <>
+                        <Separator />
+                        <button
+                          className="rsw-btn text-indigo-400 hover:text-indigo-300 animate-in fade-in zoom-in duration-200"
+                          title="Refinar com IA"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleRefineSelection();
+                          }}
+                          disabled={isRefining}
+                          type="button"
+                        >
+                          {isRefining ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                        </button>
+                      </>
+                    )}
                   </Toolbar>
                 </WysiwygEditor>
               </EditorProvider>

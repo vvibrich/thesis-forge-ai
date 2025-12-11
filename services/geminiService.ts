@@ -144,3 +144,46 @@ export const improveText = async (text: string, instruction: string): Promise<st
     return text;
   }
 };
+
+export const refineSelectedText = async (
+  selectedText: string,
+  project: TCCProject,
+  instruction?: string
+): Promise<string> => {
+  const projectContext = `
+    Título do TCC: ${project.title}
+    Curso: ${project.course}
+    Estilo: ${project.style}
+  `;
+
+  const prompt = `
+    Você é um assistente acadêmico especialista.
+    
+    CONTEXTO DO PROJETO:
+    ${projectContext}
+
+    TEXTO SELECIONADO PELO USUÁRIO:
+    "${selectedText}"
+
+    INSTRUÇÃO DO USUÁRIO:
+    ${instruction || "Melhore a escrita acadêmica, corrija gramática e torne o texto mais formal e impessoal."}
+
+    DIRETRIZES:
+    1. Mantenha o sentido original, mas eleve o nível acadêmico.
+    2. Use voz passiva ou impessoal.
+    3. Retorne APENAS o novo texto reescrito, formatado em HTML simples (<p>, <b>, <i>).
+    4. NÃO adicione explicações antes ou depois.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: prompt,
+    });
+
+    return cleanResponseText(response.text || selectedText);
+  } catch (error) {
+    console.error("Erro ao refinar texto:", error);
+    throw new Error("Falha ao refinar o texto selecionado.");
+  }
+};
