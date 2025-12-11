@@ -45,6 +45,18 @@ const Dashboard: React.FC = () => {
 
   const formatDate = (ts: number) => new Date(ts).toLocaleDateString('pt-BR');
 
+  const calculateProgress = (project: TCCProject) => {
+    if (!project.chapters || project.chapters.length === 0) return 0;
+
+    const completedChapters = project.chapters.filter(ch => {
+      // Simple heuristic: if content has more than 50 chars (stripping HTML tags roughly)
+      const textContent = ch.content.replace(/<[^>]*>/g, '').trim();
+      return textContent.length > 50;
+    }).length;
+
+    return Math.round((completedChapters / project.chapters.length) * 100);
+  };
+
   return (
     <div className="min-h-screen bg-[#0B0F19] text-white">
       <Navbar />
@@ -118,6 +130,20 @@ const Dashboard: React.FC = () => {
                   <span className="bg-white/5 px-2 py-1 rounded text-slate-400 font-medium">
                     {project.style}
                   </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mt-4">
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-slate-400">Progresso</span>
+                    <span className="text-indigo-400 font-medium">{calculateProgress(project)}%</span>
+                  </div>
+                  <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="bg-indigo-500 h-full rounded-full transition-all duration-500"
+                      style={{ width: `${calculateProgress(project)}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             ))}
