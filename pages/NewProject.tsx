@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Loader2, Sparkles } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import { FormattingStyle } from '../types';
-import { saveProject } from '../services/storageService';
+import { projectsService } from '../services/projects';
 import { generateThesisOutline } from '../services/geminiService';
 
 const NewProject: React.FC = () => {
@@ -36,16 +36,18 @@ const NewProject: React.FC = () => {
       );
 
       // 2. Create Project Object
-      const newProject = {
-        id: crypto.randomUUID(),
-        ...formData,
-        chapters: outline.map(ch => ({ ...ch, content: '', isGenerated: false })) as any[],
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
+      // We don't need to generate ID or timestamps, Supabase/Service handles it.
+      // We pass the data to the service.
+      const newProject = await projectsService.create({
+        title: formData.title,
+        course: formData.course,
+        style: formData.style,
+        researchProblem: formData.researchProblem,
+        objectives: formData.objectives,
+        chapters: outline.map(ch => ({ ...ch, content: '', isGenerated: false })) as any[]
+      });
 
-      // 3. Save and Redirect
-      saveProject(newProject);
+      // 3. Redirect
       navigate(`/editor/${newProject.id}`);
     } catch (error) {
       alert("Falha ao gerar estrutura do TCC. Por favor, tente novamente.");
@@ -58,7 +60,7 @@ const NewProject: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#0B0F19] text-white selection:bg-indigo-500 selection:text-white">
       <Navbar />
-      
+
       <main className="max-w-2xl mx-auto px-6 py-12">
         <div className="mb-10 text-center">
           <div className="inline-flex items-center justify-center p-3 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full mb-4">

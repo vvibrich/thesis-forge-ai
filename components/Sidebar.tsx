@@ -31,11 +31,10 @@ const Sidebar: React.FC<SidebarProps> = ({ chapters, currentChapterId, onSelectC
             <button
               key={chapter.id}
               onClick={() => onSelectChapter(chapter.id)}
-              className={`w-full text-left px-4 py-3 flex items-center justify-between group transition-colors ${
-                currentChapterId === chapter.id
+              className={`w-full text-left px-4 py-3 flex items-center justify-between group transition-colors ${currentChapterId === chapter.id
                   ? 'bg-indigo-500/10 text-indigo-400 border-r-2 border-indigo-500'
                   : 'hover:bg-white/5 text-slate-400 hover:text-white'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3 overflow-hidden">
                 {chapter.isGenerated && chapter.content.length > 50 ? (
@@ -52,9 +51,9 @@ const Sidebar: React.FC<SidebarProps> = ({ chapters, currentChapterId, onSelectC
           ))}
         </nav>
       </div>
-      
+
       <div className="p-4 border-t border-white/10 text-xs text-center text-slate-600">
-        v1.0.0 • Gemini 2.5 Flash
+        v1.0.0 • ThesisForge
       </div>
     </div>
   );

@@ -1,23 +1,45 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, FileText, Trash2, Clock, BookMarked } from 'lucide-react';
-import { getProjects, deleteProject } from '../services/storageService';
+import { Plus, FileText, Trash2, Clock, BookMarked, Loader2 } from 'lucide-react';
+import { projectsService } from '../services/projects';
 import { TCCProject } from '../types';
 import Navbar from '../components/Navbar';
+import { useAuth } from '../contexts/AuthContext';
 
 const Dashboard: React.FC = () => {
   const [projects, setProjects] = useState<TCCProject[]>([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
-    setProjects(getProjects());
-  }, []);
+    if (user) {
+      loadProjects();
+    }
+  }, [user]);
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const loadProjects = async () => {
+    try {
+      setLoading(true);
+      const data = await projectsService.getAll();
+      setProjects(data);
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     if (confirm('Tem certeza que deseja excluir este projeto?')) {
-      deleteProject(id);
-      setProjects(getProjects());
+      try {
+        await projectsService.delete(id);
+        setProjects(projects.filter(p => p.id !== id));
+      } catch (error) {
+        console.error('Failed to delete project:', error);
+        alert('Erro ao excluir projeto.');
+      }
     }
   };
 
@@ -26,7 +48,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#0B0F19] text-white">
       <Navbar />
-      
+
       <main className="max-w-6xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -42,7 +64,11 @@ const Dashboard: React.FC = () => {
           </Link>
         </div>
 
-        {projects.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+          </div>
+        ) : projects.length === 0 ? (
           <div className="bg-[#131926] rounded-xl border border-white/5 p-12 text-center">
             <div className="w-16 h-16 bg-indigo-500/10 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-indigo-500/20">
               <BookMarked className="w-8 h-8" />
@@ -61,8 +87,8 @@ const Dashboard: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map((project) => (
-              <div 
-                key={project.id} 
+              <div
+                key={project.id}
                 onClick={() => navigate(`/editor/${project.id}`)}
                 className="group bg-[#131926] rounded-xl border border-white/5 p-5 cursor-pointer hover:border-indigo-500/50 hover:shadow-[0_4px_20px_-12px_rgba(99,102,241,0.5)] transition-all"
               >
@@ -70,7 +96,7 @@ const Dashboard: React.FC = () => {
                   <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400 border border-indigo-500/20">
                     <FileText className="w-6 h-6" />
                   </div>
-                  <button 
+                  <button
                     onClick={(e) => handleDelete(e, project.id)}
                     className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
                     title="Excluir Projeto"
@@ -78,12 +104,12 @@ const Dashboard: React.FC = () => {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-                
+
                 <h3 className="text-lg font-semibold text-white mb-1 line-clamp-2 h-14 group-hover:text-indigo-300 transition-colors">
                   {project.title}
                 </h3>
                 <p className="text-sm text-slate-400 font-medium mb-4">{project.course}</p>
-                
+
                 <div className="flex items-center justify-between text-xs text-slate-500 border-t border-white/5 pt-4">
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5" />

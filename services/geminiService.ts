@@ -4,13 +4,17 @@ import { FormattingStyle, TCCProject, Chapter } from "../types";
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
+const cleanResponseText = (text: string): string => {
+  return text.replace(/^```(?:html|json)?\s*/i, '').replace(/\s*```$/, '').trim();
+};
+
 export const generateThesisOutline = async (
-  topic: string, 
-  course: string, 
+  topic: string,
+  course: string,
   style: FormattingStyle,
   context?: string
 ): Promise<Partial<Chapter>[]> => {
-  
+
   // Prompt translated to Portuguese to ensure output is in PT-BR
   const prompt = `
     Atue como um orientador acadêmico especialista em bancas de TCC no Brasil. 
@@ -20,15 +24,23 @@ export const generateThesisOutline = async (
 
     Retorne APENAS um array JSON de objetos representando os capítulos.
     Cada objeto deve ter:
-    - "title": string (O título acadêmico da seção em Português, ex: "Introdução", "Fundamentação Teórica", "Metodologia", etc.)
+    - "title": string (O título acadêmico da seção em Português)
     - "description": string (Uma breve instrução do que este capítulo deve conter, em Português)
     
-    Inclua as seções acadêmicas padrão: Introdução, Justificativa, Objetivos (Geral e Específicos), Metodologia, Fundamentação Teórica (com subtópicos relevantes ao tema), Resultados Esperados (ou obtidos), Discussão, Conclusão e Referências.
+    A estrutura DEVE seguir rigorosamente esta ordem lógica:
+    1. Introdução (Contextualização, Problema, Justificativa, Objetivos Geral e Específicos, Metodologia resumida)
+    2. Fundamentação Teórica (Conceitos organizados por tópicos, autores modernos + clássicos)
+    3. Metodologia (Passo a passo, técnica usada, ferramentas)
+    4. Desenvolvimento / Resultados (O que foi implementado/analisado, evidências concretas)
+    5. Conclusão (Retomada dos objetivos, o que foi atingido, limitações, trabalhos futuros)
+    6. Referências (Formato ABNT impecável)
+
+    Garanta que os títulos sejam adequados ao tema (ex: em vez de "Desenvolvimento", use algo mais específico se aplicável, mas mantendo a função da seção).
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -46,7 +58,7 @@ export const generateThesisOutline = async (
       }
     });
 
-    const text = response.text || "[]";
+    const text = cleanResponseText(response.text || "[]");
     const rawChapters = JSON.parse(text);
 
     return rawChapters.map((ch: any, index: number) => ({
@@ -66,7 +78,7 @@ export const generateChapterContent = async (
   project: TCCProject,
   chapter: Chapter
 ): Promise<string> => {
-  
+
   const projectContext = `
     Título do TCC: ${project.title}
     Curso: ${project.course}
@@ -84,27 +96,37 @@ export const generateChapterContent = async (
     TAREFA:
     Escreva o conteúdo completo para o capítulo intitulado: "${chapter.title}".
     
-    REQUISITOS:
+    DIRETRIZES ESTRITAS DE QUALIDADE (NOTA 10):
+    1. **Linguagem Impessoal e Formal:** JAMAIS use "eu", "nós", "a gente". Use voz passiva ou impessoal (ex: "Foi desenvolvido...", "Observa-se que...", "O objetivo deste trabalho é..."). Seja objetivo e direto.
+    2. **Fundamentação Científica:** Use referências de verdade (artigos científicos, livros, IEEE, Scielo, ACM). Evite blogs ou fontes genéricas.
+    3. **Formatação ABNT:** Siga as normas de citação (NBR 10520) e referências (NBR 6023) rigorosamente.
+    4. **Estrutura do Texto:** Use parágrafos bem estruturados, com conectivos lógicos.
+    
+    CONTEÚDO ESPECÍFICO POR TIPO DE CAPÍTULO:
+    - **Introdução:** Contextualize, apresente o problema, justificativa e objetivos claros.
+    - **Fundamentação Teórica:** Organize por conceitos, cite autores clássicos e modernos.
+    - **Metodologia:** Descreva o passo a passo, técnicas e ferramentas.
+    - **Resultados:** Apresente evidências concretas, dados, análises.
+    - **Conclusão:** Retome os objetivos, mostre o que foi atingido e sugira trabalhos futuros.
+    - **Referências:** Liste apenas o que foi citado, em formato ABNT perfeito.
+
+    REQUISITOS TÉCNICOS:
     - O idioma deve ser PORTUGUÊS DO BRASIL (pt-BR).
-    - Utilize tom acadêmico formal, impessoal e objetivo (padrão ABNT).
-    - Seja coerente, coeso e detalhado.
-    - Utilize vocabulário acadêmico adequado.
-    - Se este for o capítulo de "Referências", gere referências bibliográficas fictícias mas plausíveis e relevantes academicamente, formatadas segundo a norma ${project.style} (ABNT NBR 6023 para ABNT).
-    - NÃO repita o título do capítulo no início do texto, apenas o conteúdo do corpo.
     - RETORNE O TEXTO FORMATADO EM HTML.
     - Use tags como <p>, <b>, <i>, <ul>, <li>, <h3>, <h4>.
+    - NÃO repita o título do capítulo no início.
     - NÃO use Markdown (**, #, etc), apenas HTML.
     
-    Tamanho: Abrangente para uma seção final de TCC (aprox. 500-1000 palavras dependendo do tipo de seção).
+    Tamanho: Abrangente e detalhado (aprox. 800-1500 palavras).
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: prompt,
     });
 
-    return response.text || "";
+    return cleanResponseText(response.text || "");
   } catch (error) {
     console.error("Erro ao gerar capítulo:", error);
     throw new Error("Falha ao gerar o conteúdo do capítulo.");
@@ -114,10 +136,10 @@ export const generateChapterContent = async (
 export const improveText = async (text: string, instruction: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       contents: `texto_original: ${text}\n\ninstrução: ${instruction}\n\nsaída: Retorne apenas o texto reescrito em Português do Brasil com formatação HTML (<p>, <b>, etc), sem explicações.`
     });
-    return response.text || text;
+    return cleanResponseText(response.text || text);
   } catch (e) {
     return text;
   }
