@@ -40,7 +40,7 @@ export const generateThesisOutline = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -122,7 +122,7 @@ export const generateChapterContent = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
     });
 
@@ -136,7 +136,7 @@ export const generateChapterContent = async (
 export const improveText = async (text: string, instruction: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3-pro-preview',
       contents: `texto_original: ${text}\n\ninstrução: ${instruction}\n\nsaída: Retorne apenas o texto reescrito em Português do Brasil com formatação HTML (<p>, <b>, etc), sem explicações.`
     });
     return cleanResponseText(response.text || text);
@@ -177,7 +177,7 @@ export const refineSelectedText = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
     });
 
