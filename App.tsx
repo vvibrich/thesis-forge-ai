@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
@@ -24,6 +26,7 @@ const App: React.FC = () => {
           </Route>
         </Routes>
       </AuthProvider>
+      <ToastContainer position="bottom-right" theme="dark" />
     </Router>
   );
 };

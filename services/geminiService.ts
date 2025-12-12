@@ -253,3 +253,38 @@ export const reviewProject = async (project: TCCProject): Promise<ReviewResult> 
     throw new Error("Falha ao realizar a revisão do TCC.");
   }
 };
+
+export const applyCorrections = async (content: string, instructions: string): Promise<string> => {
+  const prompt = `
+    Você é um editor de texto experiente.
+    
+    TAREFA:
+    Reescreva o texto abaixo aplicando as seguintes melhorias: "${instructions}".
+    
+    REGRA CRÍTICA DE FORMATAÇÃO (TRACK CHANGES):
+    1. Para cada alteração (palavra ou frase mudada), envolva o NOVO texto em:
+       <span class="ai-correction" data-original="TEXTO_ORIGINAL_AQUI" style="background-color: #fef08a; cursor: pointer; border-bottom: 2px solid #eab308;" title="Clique para aceitar ou recusar">NOVO_TEXTO</span>
+    
+    2. Se for apenas uma correção ortográfica ou gramatical, faça a substituição usando a tag acima.
+    
+    3. Mantenha o restante do HTML original (<p>, <b>, etc) intacto.
+    
+    TEXTO ORIGINAL:
+    ${content}
+    
+    SAÍDA:
+    Retorne apenas o HTML final com as tags de correção aplicadas.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: prompt,
+    });
+
+    return cleanResponseText(response.text || content);
+  } catch (error) {
+    console.error("Erro ao aplicar correções:", error);
+    throw new Error("Falha ao aplicar as correções sugeridas.");
+  }
+};

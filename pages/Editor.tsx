@@ -1,9 +1,10 @@
+import { toast } from 'react-toastify';
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Loader2, Save, Wand2, Download, FileText, ChevronLeft, X, ShieldCheck, AlertTriangle, CheckCircle, ExternalLink,
   Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  List, ListOrdered, Undo, Redo, Heading1, Heading2, Heading3, Quote, Type, Upload, PlusCircle, Sparkles, GraduationCap
+  List, ListOrdered, Undo, Redo, Heading1, Heading2, Heading3, Quote, Type, Upload, PlusCircle, Sparkles, GraduationCap, Check
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
@@ -13,7 +14,7 @@ import { Editor as WysiwygEditor, EditorProvider } from 'react-simple-wysiwyg';
 import Sidebar from '../components/Sidebar';
 import { TCCProject, Chapter, PlagiarismResult, ReviewResult } from '../types';
 import { projectsService } from '../services/projects';
-import { generateChapterContent, refineSelectedText, reviewProject } from '../services/geminiService';
+import { generateChapterContent, refineSelectedText, reviewProject, applyCorrections } from '../services/geminiService';
 import { checkPlagiarism } from '../services/plagiarismService';
 
 // --- Local Toolbar Components ---
@@ -60,6 +61,15 @@ const Editor: React.FC = () => {
   const [isReviewing, setIsReviewing] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
+  const [reviewMode, setReviewMode] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [activeCorrection, setActiveCorrection] = useState<{
+    element: HTMLElement;
+    originalText: string;
+    newText: string;
+    top: number;
+    left: number;
+  } | null>(null);
 
   // Import Modal State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -278,6 +288,163 @@ const Editor: React.FC = () => {
       alert("Erro ao revisar o projeto. Tente novamente.");
     } finally {
       setIsReviewing(false);
+    }
+  };
+
+
+
+  const [applyingProgress, setApplyingProgress] = useState<{ current: number; total: number } | null>(null);
+
+  const handleApplySuggestions = async (scope: 'current' | 'all' = 'current') => {
+    if (!project || !activeChapter || !reviewResult) return;
+
+    setIsApplying(true);
+    try {
+      const instructions = reviewResult.improvements.join('. ');
+
+      if (scope === 'current') {
+        const newContent = await applyCorrections(activeChapter.content, instructions);
+
+        const updatedChapters = project.chapters.map(ch =>
+          ch.id === activeChapter.id ? { ...ch, content: newContent } : ch
+        );
+
+        setProject({ ...project, chapters: updatedChapters });
+        await projectsService.update(project.id, { ...project, chapters: updatedChapters });
+
+        setReviewMode(true);
+        setShowReviewModal(false);
+        toast.success("Sugestões aplicadas no capítulo atual!");
+      } else {
+        // Apply to ALL chapters - Background Process
+        setShowReviewModal(false); // Close modal immediately
+        toast.info("Correção em processamento, por favor, aguarde...", { autoClose: false, toastId: 'processing-toast' });
+
+        const total = project.chapters.length;
+        setApplyingProgress({ current: 0, total });
+
+        const updatedChapters = [...project.chapters];
+
+        for (let i = 0; i < total; i++) {
+          const chapter = updatedChapters[i];
+          setApplyingProgress({ current: i + 1, total });
+
+          // Skip empty chapters or very short ones to save tokens/time
+          if (chapter.content.length > 50) {
+            const newContent = await applyCorrections(chapter.content, instructions);
+            updatedChapters[i] = { ...chapter, content: newContent };
+          }
+        }
+
+        setProject({ ...project, chapters: updatedChapters });
+        await projectsService.update(project.id, { ...project, chapters: updatedChapters });
+
+        setReviewMode(true);
+        setApplyingProgress(null);
+        toast.dismiss('processing-toast');
+        toast.success("Correções aplicadas. Pronto para revisão");
+      }
+
+    } catch (error) {
+      console.error("Erro ao aplicar sugestões:", error);
+      toast.error("Erro ao aplicar as sugestões.");
+      setApplyingProgress(null);
+      toast.dismiss('processing-toast');
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  // Handle clicks on AI corrections
+  useEffect(() => {
+    const handleEditorClick = (e: MouseEvent) => {
+      if (!reviewMode) return;
+
+      const target = e.target as HTMLElement;
+      const correctionElement = target.closest('.ai-correction') as HTMLElement;
+
+      if (correctionElement) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rect = correctionElement.getBoundingClientRect();
+        const originalText = correctionElement.getAttribute('data-original') || '';
+        const newText = correctionElement.innerText;
+
+        // Calculate position to keep it on screen
+        let top = rect.bottom + window.scrollY + 10;
+        let left = rect.left + window.scrollX;
+
+        // Adjust if going off-screen (basic)
+        if (left + 320 > window.innerWidth) {
+          left = window.innerWidth - 340; // 20px padding
+        }
+
+        setActiveCorrection({
+          element: correctionElement,
+          originalText,
+          newText,
+          top,
+          left
+        });
+      } else {
+        // Close popover if clicking outside
+        if (activeCorrection && !target.closest('.correction-popover')) {
+          setActiveCorrection(null);
+        }
+      }
+    };
+
+    document.addEventListener('click', handleEditorClick);
+    return () => document.removeEventListener('click', handleEditorClick);
+  }, [reviewMode, activeCorrection]);
+
+  const handleAcceptCorrection = () => {
+    if (!activeCorrection) return;
+
+    const { element, newText } = activeCorrection;
+    const parent = element.parentNode;
+    if (parent) {
+      const textNode = document.createTextNode(newText);
+      parent.replaceChild(textNode, element);
+      updateProjectContent();
+    }
+    setActiveCorrection(null);
+  };
+
+  const handleRejectCorrection = () => {
+    if (!activeCorrection) return;
+
+    const { element, originalText } = activeCorrection;
+    const parent = element.parentNode;
+    if (parent) {
+      const textNode = document.createTextNode(originalText);
+      parent.replaceChild(textNode, element);
+      updateProjectContent();
+    }
+    setActiveCorrection(null);
+  };
+
+  const updateProjectContent = () => {
+    const editorContainer = document.querySelector('.rsw-ce');
+    if (editorContainer && activeChapterId && project) {
+      const currentHTML = editorContainer.innerHTML;
+
+      // Update project state first
+      const updatedChapters = project.chapters.map(ch =>
+        ch.id === activeChapterId ? { ...ch, content: currentHTML } : ch
+      );
+      setProject({ ...project, chapters: updatedChapters });
+
+      // Check if ANY chapter still has corrections
+      const hasRemainingCorrections = updatedChapters.some(ch =>
+        ch.content.includes('ai-correction')
+      );
+
+      if (!hasRemainingCorrections) {
+        setReviewMode(false);
+        alert("Revisão concluída! Todas as sugestões foram processadas.");
+      }
     }
   };
 
@@ -595,12 +762,14 @@ const Editor: React.FC = () => {
 
             <button
               onClick={handleReviewProject}
-              disabled={isReviewing}
+              disabled={isReviewing || isApplying}
               className="flex items-center gap-2 px-3 py-2 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 rounded-lg transition-colors text-sm font-medium border border-indigo-500/20 mr-2"
               title="Revisar TCC com IA"
             >
-              {isReviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
-              <span className="hidden lg:inline">Revisar TCC</span>
+              {isReviewing || isApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
+              <span className="hidden lg:inline">
+                {isApplying ? "Processando correções..." : "Revisar TCC"}
+              </span>
             </button>
 
             <button
@@ -834,9 +1003,6 @@ const Editor: React.FC = () => {
                       <label className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-all ${importMode === 'new' ? 'bg-indigo-600/10 border-indigo-500' : 'bg-[#0B0F19] border-white/10 hover:border-white/20'}`}>
                         <input
                           type="radio"
-                          name="importMode"
-                          className="mt-1"
-                          checked={importMode === 'new'}
                           onChange={() => setImportMode('new')}
                         />
                         <div>
@@ -1039,8 +1205,8 @@ const Editor: React.FC = () => {
                   <div className="flex items-center justify-center mb-8">
                     <div className="relative">
                       <div className={`w-32 h-32 rounded-full flex items-center justify-center border-4 ${reviewResult.grade >= 7 ? 'border-emerald-500 text-emerald-500' :
-                          reviewResult.grade >= 5 ? 'border-yellow-500 text-yellow-500' :
-                            'border-red-500 text-red-500'
+                        reviewResult.grade >= 5 ? 'border-yellow-500 text-yellow-500' :
+                          'border-red-500 text-red-500'
                         }`}>
                         <span className="text-4xl font-bold">{reviewResult.grade.toFixed(1)}</span>
                       </div>
@@ -1096,15 +1262,66 @@ const Editor: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="p-4 border-t border-white/10 bg-[#0B0F19] rounded-b-xl flex justify-end">
-                  <button
-                    onClick={() => setShowReviewModal(false)}
-                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors"
-                  >
-                    Fechar
-                  </button>
+                <div className="p-4 border-t border-white/10 bg-[#0B0F19] rounded-b-xl flex justify-between items-center gap-3">
+                  {applyingProgress ? (
+                    <div className="flex items-center gap-3 text-sm text-indigo-400 font-medium animate-pulse">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>
+                        Aplicando sugestões no capítulo {applyingProgress.current} de {applyingProgress.total}...
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowReviewModal(false)}
+                      className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+                    >
+                      Fechar
+                    </button>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleApplySuggestions('current')}
+                      disabled={isApplying || !!applyingProgress}
+                      className="px-4 py-2 bg-[#131926] hover:bg-[#1C2333] text-white rounded-lg font-medium transition-colors disabled:opacity-50 border border-white/10 text-sm"
+                    >
+                      Aplicar no Capítulo
+                    </button>
+                    <button
+                      onClick={() => handleApplySuggestions('all')}
+                      disabled={isApplying || !!applyingProgress}
+                      className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2 text-sm"
+                    >
+                      {isApplying && !applyingProgress ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      Aplicar em Todo o TCC
+                    </button>
+                  </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Correction Popover */}
+          {activeCorrection && (
+            <div
+              className="correction-popover absolute z-[100] bg-[#1e1e1e] border border-white/10 rounded-lg shadow-2xl p-1.5 flex items-center gap-1 animate-in fade-in zoom-in-95 duration-200"
+              style={{ top: activeCorrection.top, left: activeCorrection.left }}
+            >
+              <button
+                onClick={handleRejectCorrection}
+                className="p-2 hover:bg-white/10 text-red-400 rounded-md transition-colors"
+                title="Recusar alteração"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="w-px h-4 bg-white/10 mx-1" />
+              <button
+                onClick={handleAcceptCorrection}
+                className="p-2 hover:bg-white/10 text-emerald-400 rounded-md transition-colors"
+                title="Aceitar alteração"
+              >
+                <Check className="w-4 h-4" />
+              </button>
             </div>
           )}
         </main>
