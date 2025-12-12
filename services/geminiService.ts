@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { FormattingStyle, TCCProject, Chapter } from "../types";
+import { FormattingStyle, TCCProject, Chapter, ReviewResult } from "../types";
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
@@ -185,5 +185,71 @@ export const refineSelectedText = async (
   } catch (error) {
     console.error("Erro ao refinar texto:", error);
     throw new Error("Falha ao refinar o texto selecionado.");
+  }
+};
+
+export const reviewProject = async (project: TCCProject): Promise<ReviewResult> => {
+  const fullContent = project.chapters
+    .map(ch => `CAPÍTULO: ${ch.title}\n\n${ch.content.replace(/<[^>]*>/g, '')}`)
+    .join('\n\n-------------------\n\n');
+
+  const prompt = `
+    Atue como um examinador rigoroso de banca de TCC.
+    
+    DADOS DO PROJETO:
+    Título: ${project.title}
+    Curso: ${project.course}
+    Estilo: ${project.style}
+
+    CONTEÚDO COMPLETO DO TRABALHO:
+    ${fullContent}
+
+    TAREFA:
+    Analise o trabalho acima e forneça um feedback estruturado.
+    
+    CRITÉRIOS DE AVALIAÇÃO:
+    1. Coerência e Coesão Textual.
+    2. Estrutura Lógica e Argumentação.
+    3. Adequação à Linguagem Acadêmica (Impessoalidade, Formalidade).
+    4. Clareza dos Objetivos e Resultados.
+
+    SAÍDA ESPERADA (JSON):
+    {
+      "grade": number (Nota de 0 a 10, com uma casa decimal),
+      "feedback": string (Comentário geral sobre o trabalho, tom construtivo),
+      "strengths": string[] (Lista de 3 a 5 pontos fortes),
+      "improvements": string[] (Lista de 3 a 5 pontos de melhoria específicos e acionáveis)
+    }
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            grade: { type: Type.NUMBER },
+            feedback: { type: Type.STRING },
+            strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+            improvements: { type: Type.ARRAY, items: { type: Type.STRING } }
+          },
+          required: ['grade', 'feedback', 'strengths', 'improvements']
+        }
+      }
+    });
+
+    const text = cleanResponseText(response.text || "{}");
+    const result = JSON.parse(text);
+
+    return {
+      ...result,
+      reviewedAt: Date.now()
+    };
+  } catch (error) {
+    console.error("Erro ao revisar projeto:", error);
+    throw new Error("Falha ao realizar a revisão do TCC.");
   }
 };

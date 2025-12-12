@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Loader2, Save, Wand2, Download, FileText, ChevronLeft, X, ShieldCheck, AlertTriangle, CheckCircle, ExternalLink,
   Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  List, ListOrdered, Undo, Redo, Heading1, Heading2, Heading3, Quote, Type, Upload, PlusCircle, Sparkles
+  List, ListOrdered, Undo, Redo, Heading1, Heading2, Heading3, Quote, Type, Upload, PlusCircle, Sparkles, GraduationCap
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
@@ -11,9 +11,9 @@ import FileSaver from 'file-saver';
 import { Editor as WysiwygEditor, EditorProvider } from 'react-simple-wysiwyg';
 
 import Sidebar from '../components/Sidebar';
-import { TCCProject, Chapter, PlagiarismResult } from '../types';
+import { TCCProject, Chapter, PlagiarismResult, ReviewResult } from '../types';
 import { projectsService } from '../services/projects';
-import { generateChapterContent, refineSelectedText } from '../services/geminiService';
+import { generateChapterContent, refineSelectedText, reviewProject } from '../services/geminiService';
 import { checkPlagiarism } from '../services/plagiarismService';
 
 // --- Local Toolbar Components ---
@@ -55,6 +55,11 @@ const Editor: React.FC = () => {
   const [isCheckingPlagiarism, setIsCheckingPlagiarism] = useState(false);
   const [showPlagiarismModal, setShowPlagiarismModal] = useState(false);
   const [plagiarismResult, setPlagiarismResult] = useState<PlagiarismResult | null>(null);
+
+  // Review State
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
 
   // Import Modal State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -251,6 +256,28 @@ const Editor: React.FC = () => {
       alert("Erro ao verificar plágio. Tente novamente.");
     } finally {
       setIsCheckingPlagiarism(false);
+    }
+  };
+
+  const handleReviewProject = async () => {
+    if (!project) return;
+
+    // Check if there is enough content
+    const totalContentLength = project.chapters.reduce((acc, ch) => acc + ch.content.length, 0);
+    if (totalContentLength < 500) {
+      alert("O projeto precisa ter mais conteúdo para ser revisado.");
+      return;
+    }
+
+    setIsReviewing(true);
+    try {
+      const result = await reviewProject(project);
+      setReviewResult(result);
+      setShowReviewModal(true);
+    } catch (error) {
+      alert("Erro ao revisar o projeto. Tente novamente.");
+    } finally {
+      setIsReviewing(false);
     }
   };
 
@@ -564,6 +591,16 @@ const Editor: React.FC = () => {
             >
               {isCheckingPlagiarism ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
               <span className="hidden lg:inline">Verificar Plágio</span>
+            </button>
+
+            <button
+              onClick={handleReviewProject}
+              disabled={isReviewing}
+              className="flex items-center gap-2 px-3 py-2 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 rounded-lg transition-colors text-sm font-medium border border-indigo-500/20 mr-2"
+              title="Revisar TCC com IA"
+            >
+              {isReviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
+              <span className="hidden lg:inline">Revisar TCC</span>
             </button>
 
             <button
@@ -969,6 +1006,102 @@ const Editor: React.FC = () => {
                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors"
                   >
                     Entendi
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Review Result Modal */}
+          {showReviewModal && reviewResult && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-[#131926] rounded-xl border border-white/10 w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh]">
+                <div className="flex items-center justify-between p-6 border-b border-white/10">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500">
+                      <GraduationCap className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-white">Revisão do TCC</h3>
+                      <p className="text-sm text-slate-400">Avaliação realizada pela IA</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowReviewModal(false)}
+                    className="text-slate-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="p-6 overflow-y-auto custom-scrollbar">
+                  {/* Grade Section */}
+                  <div className="flex items-center justify-center mb-8">
+                    <div className="relative">
+                      <div className={`w-32 h-32 rounded-full flex items-center justify-center border-4 ${reviewResult.grade >= 7 ? 'border-emerald-500 text-emerald-500' :
+                          reviewResult.grade >= 5 ? 'border-yellow-500 text-yellow-500' :
+                            'border-red-500 text-red-500'
+                        }`}>
+                        <span className="text-4xl font-bold">{reviewResult.grade.toFixed(1)}</span>
+                      </div>
+                      <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#131926] px-2 text-slate-400 text-sm font-medium">
+                        NOTA FINAL
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* General Feedback */}
+                  <div className="mb-8 bg-white/5 p-4 rounded-lg border border-white/10">
+                    <h4 className="text-white font-bold mb-2 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-indigo-400" />
+                      Parecer Geral
+                    </h4>
+                    <p className="text-slate-300 text-sm leading-relaxed">
+                      {reviewResult.feedback}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Strengths */}
+                    <div>
+                      <h4 className="text-emerald-400 font-bold mb-3 flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4" />
+                        Pontos Fortes
+                      </h4>
+                      <ul className="space-y-2">
+                        {reviewResult.strengths.map((point, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
+                            {point}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Improvements */}
+                    <div>
+                      <h4 className="text-yellow-400 font-bold mb-3 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4" />
+                        Pontos de Melhoria
+                      </h4>
+                      <ul className="space-y-2">
+                        {reviewResult.improvements.map((point, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 mt-1.5 flex-shrink-0" />
+                            {point}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-white/10 bg-[#0B0F19] rounded-b-xl flex justify-end">
+                  <button
+                    onClick={() => setShowReviewModal(false)}
+                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors"
+                  >
+                    Fechar
                   </button>
                 </div>
               </div>

@@ -55,3 +55,11 @@ export interface PlagiarismResult {
   matches: PlagiarismMatch[];
   scannedAt: number;
 }
+
+export interface ReviewResult {
+  grade: number;
+  feedback: string;
+  improvements: string[];
+  strengths: string[];
+  reviewedAt: number;
+}
